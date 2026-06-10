@@ -1,0 +1,4 @@
+pymupdf
+psycopg2-binary
+python-dotenv
+tiktoken

@@ -1,4 +1,4 @@
-pymupdf
-psycopg2-binary
-python-dotenv
-tiktoken
+pymupdf==1.28.0
+psycopg2-binary==2.9.12
+python-dotenv==1.2.2
+tiktoken==0.13.0

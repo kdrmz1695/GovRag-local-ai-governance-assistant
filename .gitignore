@@ -1,17 +1,29 @@
-# Environment variables
+# Environment variables and secrets
 .env
 .env.*
+!.env.example
 
-# Python
-__pycache__/
-*.pyc
+# Python virtual environments
 .venv/
+.venv*/
 venv/
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test and tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # PyCharm
 .idea/
 
-# Data files
+# Local data pipeline files
 data/raw/
 data/bronze/
 data/silver/
@@ -19,3 +31,7 @@ data/gold/
 
 # Logs
 *.log
+
+# Operating system files
+.DS_Store
+Thumbs.db

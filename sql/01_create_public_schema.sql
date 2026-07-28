@@ -1,0 +1,4 @@
+CREATE SCHEMA public AUTHORIZATION postgres;
+
+CREATE EXTENSION vector
+WITH SCHEMA public;

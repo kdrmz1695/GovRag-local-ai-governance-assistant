@@ -1,0 +1,165 @@
+{
+  "schema_version": "1.0",
+  "dataset_id": "govrag_v1_development_eval",
+  "version": "0.1.0",
+  "created_at": "2026-08-28",
+  "language": "en",
+  "purpose": "Small development evaluation for source retrieval and reranking, with separate manual answer and citation review.",
+  "retrieval_settings": {
+    "candidate_k": 20,
+    "rerank_top_k": 4
+  },
+  "evaluation_rules": {
+    "query_input": "Pass only each question string to the RAG pipeline. Do not pass expected sources, reference notes, or review checks to the models.",
+    "source_anchor_hit": "A candidate must match the expected document and section together. If an expected source specifies pdf_pages, its page interval must also overlap one of those pages. Matching any one expected source is sufficient for this source-anchor metric.",
+    "normalization": "Normalize case and whitespace; optionally remove a trailing .pdf from document names. Do not use substring article matching: Article 6 must not match Article 60. Do not treat a mention of an article inside chunk_text as the section containing that chunk.",
+    "metric_names": ["source_anchor_hit_at_20", "reranked_source_anchor_hit_at_4"],
+    "manual_review": "A metadata match only locates a source section. Separately inspect whether the actual retrieved passages contain enough evidence, whether the answer is correct and complete, and whether each cited source supports the associated claim.",
+    "duplicates": "Count a question at most once per metric, regardless of how many matching chunks it returns.",
+    "missing_expected_source": "If an expected source cannot be resolved in the ingested corpus, report unresolved_ground_truth and investigate ingestion or metadata before scoring it as a retrieval miss.",
+    "limitations": "Ten hand-authored, answerable questions form a development smoke-test set, not a held-out benchmark or a certification of legal reliability. GDPR-01 has already been used during development. Unanswerable questions and adversarial tests are not covered.",
+    "version_scope": "Evaluate the versions of the PDFs actually ingested. The AI Act anchors refer to the original 2024 text, not a claim about the law currently in force. Confirm local document names and section metadata before the first scored run."
+  },
+  "documents": {
+    "GDPR": {
+      "document_name": "gdpr_2016_679",
+      "title": "Regulation (EU) 2016/679 (GDPR)",
+      "source_url": "https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng",
+      "anchor_cross_check_url": "https://www.cnil.fr/fr/reglement-europeen-protection-donnees",
+      "local_pdf_page_numbers_verified": false
+    },
+    "EU_AI_ACT": {
+      "document_name": "eu_ai_act_2024_1689",
+      "title": "Regulation (EU) 2024/1689 (EU AI Act)",
+      "source_url": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj/eng",
+      "version_basis": "Original 2024 text; verify against the ingested PDF.",
+      "local_pdf_page_numbers_verified": false
+    },
+    "EDPB_28_2024": {
+      "document_name": "edpb_opinion_202428_ai-models_en",
+      "file_name": "edpb_opinion_202428_ai-models_en.pdf",
+      "title": "Opinion 28/2024 on certain data protection aspects related to the processing of personal data in the context of AI models",
+      "adopted_on": "2024-12-17",
+      "source_url": "https://www.edpb.europa.eu/system/files/2024-12/edpb_opinion_202428_ai-models_en.pdf",
+      "local_pdf_page_numbers_verified": true,
+      "pdf_page_count": 35,
+      "page_numbering": "One-based PDF page numbers; printed page numbers coincide in the supplied PDF."
+    }
+  },
+  "questions": [
+    {
+      "id": "GDPR-01",
+      "document_key": "GDPR",
+      "question": "When is a data protection impact assessment required under the GDPR?",
+      "expected_sources": [
+        {"section_type": "article", "section_reference": "Article 35"}
+      ],
+      "reference_notes": "Review Article 35(1), (3) and (4), including the conditions attached to each trigger. Recitals can provide context but do not replace the Article anchor for this metric.",
+      "manual_review_focus": "Check the high-risk threshold, scale and decision-impact conditions. Do not accept an answer that turns a conditional trigger into an unconditional rule."
+    },
+    {
+      "id": "GDPR-02",
+      "document_key": "GDPR",
+      "question": "Under what circumstances can a person request the erasure of personal data under the GDPR, and is this right absolute?",
+      "expected_sources": [
+        {"section_type": "article", "section_reference": "Article 17"}
+      ],
+      "reference_notes": "Review the grounds in Article 17(1) together with the exceptions in Article 17(3).",
+      "manual_review_focus": "Check both the grounds and the exceptions; citing the correct Article alone is insufficient."
+    },
+    {
+      "id": "GDPR-03",
+      "document_key": "GDPR",
+      "question": "What are the lawful bases for processing personal data under the GDPR?",
+      "expected_sources": [
+        {"section_type": "article", "section_reference": "Article 6"}
+      ],
+      "reference_notes": "Review Article 6(1)(a)-(f), including the restrictions attached to the listed bases.",
+      "manual_review_focus": "Check the six bases against the source and preserve their conditions; do not present consent as the only possible basis."
+    },
+    {
+      "id": "GDPR-04",
+      "document_key": "GDPR",
+      "question": "What must a contract governing a processor's handling of personal data for a controller include under the GDPR?",
+      "expected_sources": [
+        {"section_type": "article", "section_reference": "Article 28"}
+      ],
+      "reference_notes": "Focus on Article 28(3), with relevant context from Article 28(2), (4) and (9).",
+      "manual_review_focus": "Check the contract's required particulars and processor duties. Do not confuse the controller and processor roles."
+    },
+    {
+      "id": "AIA-01",
+      "document_key": "EU_AI_ACT",
+      "question": "Under the EU AI Act, may an employer use an AI system to infer employees' emotions at work, and are there any exceptions?",
+      "expected_sources": [
+        {"section_type": "article", "section_reference": "Article 5"}
+      ],
+      "reference_notes": "Article 5(1)(f), original 2024 text. This narrower scenario replaces the draft's request to list every prohibited practice.",
+      "reference_url": "https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-5",
+      "manual_review_focus": "Check the workplace prohibition and the medical or safety exceptions; do not invent an exception based only on employee consent."
+    },
+    {
+      "id": "AIA-02",
+      "document_key": "EU_AI_ACT",
+      "question": "How does the EU AI Act determine whether an AI system is high-risk?",
+      "expected_sources": [
+        {"section_type": "article", "section_reference": "Article 6"}
+      ],
+      "reference_notes": "Article 6 is the core classification anchor. Annex I and Annex III provide additional detail; retrieving an annex alone is not a hit for this core-anchor metric.",
+      "reference_url": "https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-6",
+      "manual_review_focus": "Check both classification routes, the cumulative product-related conditions, and the qualifications to the Annex III route. Score answer completeness separately from the Article 6 source hit."
+    },
+    {
+      "id": "AIA-03",
+      "document_key": "EU_AI_ACT",
+      "question": "What does the EU AI Act require of the risk-management system for high-risk AI systems?",
+      "expected_sources": [
+        {"section_type": "article", "section_reference": "Article 9"}
+      ],
+      "reference_notes": "Article 9, original 2024 text.",
+      "reference_url": "https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-9",
+      "manual_review_focus": "Check lifecycle review, risk identification and evaluation, mitigation and testing. Do not describe the process as a one-time pre-release checklist."
+    },
+    {
+      "id": "AIA-04",
+      "document_key": "EU_AI_ACT",
+      "question": "Under the EU AI Act, when must people be informed that they are interacting directly with an AI system, and what exceptions apply?",
+      "expected_sources": [
+        {"section_type": "article", "section_reference": "Article 50"}
+      ],
+      "reference_notes": "Focus on Article 50(1) and the timing and accessibility requirements in Article 50(5), original 2024 text.",
+      "reference_url": "https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-50",
+      "manual_review_focus": "Check the provider's duty, the obvious-interaction qualification, the qualified criminal-law exception, and timing of the notice. Do not confuse these with all synthetic-content duties."
+    },
+    {
+      "id": "EDPB-01",
+      "document_key": "EDPB_28_2024",
+      "question": "According to EDPB Opinion 28/2024, what conditions must be met for an AI model trained on personal data to be considered anonymous?",
+      "expected_sources": [
+        {"section_type": "opinion_section", "section_reference": "Section 3.2.1", "pdf_pages": [15, 16]},
+        {"section_type": "executive_summary", "section_reference": "Executive summary", "pdf_pages": [2]}
+      ],
+      "reference_notes": "Primary reference: paragraph 43 on page 16, with paragraphs 38-42 as context. The executive summary on page 2 is also accepted because it directly summarises the two conditions. Page overlap remains only a locator, not proof of evidence sufficiency.",
+      "manual_answer_checks": [
+        "The likelihood of extracting personal data about training-data subjects must be insignificant.",
+        "The likelihood of obtaining such data through queries, intentionally or unintentionally, must also be insignificant.",
+        "Assessment is case-specific and considers all means reasonably likely to be used; training on personal data does not automatically make a model anonymous."
+      ]
+    },
+    {
+      "id": "EDPB-02",
+      "document_key": "EDPB_28_2024",
+      "question": "According to EDPB Opinion 28/2024, what three-step assessment is required before relying on legitimate interest to process personal data when developing or deploying an AI model?",
+      "expected_sources": [
+        {"section_type": "opinion_section", "section_reference": "Section 3.3.2", "pdf_pages": [21]},
+        {"section_type": "executive_summary", "section_reference": "Executive summary", "pdf_pages": [2]}
+      ],
+      "reference_notes": "Primary reference: paragraph 66 on page 21. The executive summary on page 2 also contains the complete three-step test. Sections 3.3.2.1-3.3.2.3 elaborate individual steps and can supplement the core passage.",
+      "manual_answer_checks": [
+        "Identify a legitimate interest pursued by the controller or a third party.",
+        "Assess whether the processing is necessary to pursue that interest.",
+        "Balance the interest against the interests and fundamental rights and freedoms of data subjects; all three conditions are cumulative and the assessment must be documented."
+      ]
+    }
+  ]
+}

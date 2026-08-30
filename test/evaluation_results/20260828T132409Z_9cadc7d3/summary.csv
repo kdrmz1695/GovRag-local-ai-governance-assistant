@@ -1,0 +1,11 @@
+﻿id,status,question,expected_document,vector_hit,vector_top_k_hit,reranked_hit,first_vector_hit_rank,first_reranked_hit_rank,error_stage,error
+GDPR-01,completed,When is a data protection impact assessment required under the GDPR?,gdpr_2016_679,True,True,True,2,2,,
+GDPR-02,completed,"Under what circumstances can a person request the erasure of personal data under the GDPR, and is this right absolute?",gdpr_2016_679,True,True,True,2,1,,
+GDPR-03,completed,What are the lawful bases for processing personal data under the GDPR?,gdpr_2016_679,True,True,True,2,2,,
+GDPR-04,completed,What must a contract governing a processor's handling of personal data for a controller include under the GDPR?,gdpr_2016_679,True,True,True,1,2,,
+AIA-01,completed,"Under the EU AI Act, may an employer use an AI system to infer employees' emotions at work, and are there any exceptions?",eu_ai_act_2024_1689,True,False,False,15,,,
+AIA-02,completed,How does the EU AI Act determine whether an AI system is high-risk?,eu_ai_act_2024_1689,True,True,True,3,1,,
+AIA-03,completed,What does the EU AI Act require of the risk-management system for high-risk AI systems?,eu_ai_act_2024_1689,True,True,True,4,3,,
+AIA-04,completed,"Under the EU AI Act, when must people be informed that they are interacting directly with an AI system, and what exceptions apply?",eu_ai_act_2024_1689,True,True,True,2,2,,
+EDPB-01,completed,"According to EDPB Opinion 28/2024, what conditions must be met for an AI model trained on personal data to be considered anonymous?",edpb_opinion_202428_ai-models_en,True,True,True,3,1,,
+EDPB-02,completed,"According to EDPB Opinion 28/2024, what three-step assessment is required before relying on legitimate interest to process personal data when developing or deploying an AI model?",edpb_opinion_202428_ai-models_en,True,True,True,2,1,,

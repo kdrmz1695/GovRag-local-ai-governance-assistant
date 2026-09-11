@@ -59,7 +59,7 @@
       "document_type": "guidelines",
       "legal_status": "non_binding_guidance_endorsed_by_edpb",
       "language": "en",
-      "version_or_date": "WP251rev.01; EDPB endorsed 2018-05-25",
+      "version_or_date": "WP251rev.01; revised and adopted 2018-02-06; EDPB endorsed 2018-05-25",
       "parser_type": "wp29_guidelines",
       "enabled": false
     },
@@ -74,7 +74,7 @@
       "document_type": "guidelines",
       "legal_status": "non_binding_guidance_endorsed_by_edpb",
       "language": "en",
-      "version_or_date": "WP248rev.01; published 2017-10-13; EDPB endorsed 2018-05-25",
+      "version_or_date": "WP248rev.01; revised and adopted 2017-10-04; EDPB endorsed 2018-05-25",
       "parser_type": "wp29_guidelines",
       "enabled": false
     },
@@ -89,7 +89,7 @@
       "document_type": "guidelines",
       "legal_status": "non_binding_guidance",
       "language": "en",
-      "version_or_date": "Version 2.1; corrected 2022-09-20",
+      "version_or_date": "Version 2.1; corrected 2022-09-20; final version adopted 2021-07-07",
       "parser_type": "edpb_guidelines",
       "enabled": false
     },
@@ -119,7 +119,7 @@
       "document_type": "guidelines",
       "legal_status": "non_binding_commission_guidance",
       "language": "en",
-      "version_or_date": "Published 2025-02-06",
+      "version_or_date": "C(2025) 5053 final; 2025-07-29",
       "parser_type": "ec_guidelines",
       "enabled": false
     },
@@ -134,7 +134,7 @@
       "document_type": "guidelines",
       "legal_status": "non_binding_commission_guidance",
       "language": "en",
-      "version_or_date": "Published 2025-02-04",
+      "version_or_date": "C(2025) 5052 final; 2025-07-29",
       "parser_type": "ec_guidelines",
       "enabled": false
     },
@@ -149,7 +149,7 @@
       "document_type": "guidelines",
       "legal_status": "non_binding_commission_guidance",
       "language": "en",
-      "version_or_date": "Published 2025-07-18",
+      "version_or_date": "C(2025) 7719 final; 2025-11-19",
       "parser_type": "ec_guidelines",
       "enabled": false
     }

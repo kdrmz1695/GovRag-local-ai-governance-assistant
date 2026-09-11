@@ -31,6 +31,20 @@ LEGAL_DOCUMENT_NAMES = {
 
 EDPB_DOCUMENT_NAME = "edpb_opinion_202428_ai-models_en"
 
+PARSER_EU_REGULATION = "eu_regulation"
+PARSER_EDPB_OPINION_28_2024 = "edpb_opinion_28_2024"
+PARSER_GENERIC = "generic"
+
+SUPPORTED_PARSER_TYPES = {
+    PARSER_EU_REGULATION,
+    PARSER_EDPB_OPINION_28_2024,
+    PARSER_GENERIC,
+}
+
+
+class UnsupportedParserError(ValueError):
+    pass
+
 SECTION_NUMBER_PATTERN = re.compile(r"\d+(?:\.\d+){0,2}")
 COMBINED_SECTION_PATTERN = re.compile(
     r"^(\d+(?:\.\d+){0,2})\s+(.+)$"
@@ -387,12 +401,30 @@ def parse_generic_document(
 def parse_document_structure(
     document_name: str,
     pages: list[tuple[int, str]],
+    parser_type: str | None = None,
 ) -> list[AnnotatedLine]:
     records = create_line_records(pages)
 
     if not records:
         return []
 
+    if parser_type is not None:
+        if parser_type == PARSER_EU_REGULATION:
+            return parse_legal_document(records)
+
+        if parser_type == PARSER_EDPB_OPINION_28_2024:
+            return parse_edpb_document(records)
+
+        if parser_type == PARSER_GENERIC:
+            return parse_generic_document(records)
+
+        raise UnsupportedParserError(
+            f"Unsupported parser_type {parser_type!r} for manifest document "
+            f"{document_name!r}. Inspect the extracted PDF layout and implement "
+            "an explicit parser before Silver processing."
+        )
+
+    # Backward-compatible dispatch for callers that predate the corpus manifest.
     if document_name in LEGAL_DOCUMENT_NAMES:
         return parse_legal_document(records)
 

@@ -1,13 +1,28 @@
+import argparse
 from pathlib import Path
 import hashlib
 import os
+import sys
 
 import psycopg2
 import tiktoken
 from dotenv import load_dotenv
 
-from legal_structure import (
+SRC_ROOT = Path(__file__).resolve().parents[1]
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from corpus_manifest import (
+    DEFAULT_MANIFEST_PATH,
+    CorpusDocument,
+    ManifestValidationError,
+    load_corpus_manifest,
+    select_documents,
+)
+from processing.legal_structure import (
     AnnotatedLine,
+    SUPPORTED_PARSER_TYPES,
+    UnsupportedParserError,
     parse_document_structure,
     summarize_structure,
 )
@@ -85,10 +100,8 @@ def calculate_chunk_hash(chunk_text: str) -> str:
     ).hexdigest()
 
 
-def get_bronze_documents(cursor):
-    """
-    Read document-level metadata from Bronze.
-    """
+def get_bronze_document(cursor, stable_document_id: str):
+    """Read exactly one Bronze row for a stable manifest identity."""
     cursor.execute(
         """
         SELECT
@@ -96,11 +109,22 @@ def get_bronze_documents(cursor):
             document_name,
             page_count
         FROM bronze.raw_documents
+        WHERE document_name = %s
         ORDER BY document_id;
-        """
+        """,
+        (stable_document_id,),
     )
-
-    return cursor.fetchall()
+    rows = cursor.fetchall()
+    if not rows:
+        raise ValueError(
+            f"Manifest document {stable_document_id!r} is not present in Bronze."
+        )
+    if len(rows) > 1:
+        raise ValueError(
+            f"Bronze contains duplicate logical document identity "
+            f"{stable_document_id!r}. Resolve it before Silver processing."
+        )
+    return rows[0]
 
 
 def get_document_pages(cursor, document_id: int):
@@ -324,6 +348,52 @@ def create_section_aware_chunks(
     return chunks
 
 
+def document_chunks_are_current(
+    cursor,
+    document_id: int,
+    chunks: list[dict],
+) -> bool:
+    """Compare generated chunks with Silver without changing either layer."""
+    cursor.execute(
+        """
+        SELECT
+            chunk_order,
+            chunk_text,
+            chunk_char_length,
+            chunk_token_count,
+            page_start,
+            page_end,
+            section_type,
+            section_reference,
+            section_title,
+            chunk_hash,
+            chunking_version
+        FROM silver.document_chunks
+        WHERE document_id = %s
+        ORDER BY chunk_order;
+        """,
+        (document_id,),
+    )
+    existing = cursor.fetchall()
+    expected = [
+        (
+            chunk_order,
+            chunk["chunk_text"],
+            chunk["chunk_char_length"],
+            chunk["chunk_token_count"],
+            chunk["page_start"],
+            chunk["page_end"],
+            chunk["section_type"],
+            chunk["section_reference"],
+            chunk["section_title"],
+            chunk["chunk_hash"],
+            CHUNKING_VERSION,
+        )
+        for chunk_order, chunk in enumerate(chunks, start=1)
+    ]
+    return existing == expected
+
+
 def insert_document_chunks(
     cursor,
     document_id: int,
@@ -382,85 +452,147 @@ def insert_document_chunks(
         )
 
 
+def process_document(
+    cursor,
+    document: CorpusDocument,
+    encoding,
+    *,
+    dry_run: bool,
+) -> str:
+    if document.parser_type not in SUPPORTED_PARSER_TYPES:
+        raise UnsupportedParserError(
+            f"Unsupported parser_type {document.parser_type!r} for manifest "
+            f"document {document.document_id!r}. Inspect its extracted layout "
+            "and implement an explicit parser before Silver processing."
+        )
+
+    document_id, document_name, expected_page_count = get_bronze_document(
+        cursor,
+        document.document_id,
+    )
+    pages = get_document_pages(cursor=cursor, document_id=document_id)
+    if len(pages) != expected_page_count:
+        raise ValueError(
+            f"Page count mismatch for {document_name}: expected "
+            f"{expected_page_count}, found {len(pages)}"
+        )
+
+    annotated_lines = parse_document_structure(
+        document_name=document_name,
+        pages=pages,
+        parser_type=document.parser_type,
+    )
+    if not annotated_lines:
+        raise ValueError(f"No structured text was produced for: {document_name}")
+
+    validate_detected_structure(document_name, annotated_lines)
+    print_structure_summary(document_name, annotated_lines)
+    chunks = create_section_aware_chunks(
+        annotated_lines=annotated_lines,
+        encoding=encoding,
+        chunk_size=CHUNK_SIZE,
+        overlap=CHUNK_OVERLAP,
+    )
+    if not chunks:
+        raise ValueError(f"No chunks were created for: {document_name}")
+
+    if document_chunks_are_current(cursor, document_id, chunks):
+        print(f"Unchanged: {document_name}; existing Silver chunks preserved.")
+        return "unchanged"
+
+    if dry_run:
+        print(
+            f"Dry run: {document_name} would rebuild {len(chunks)} Silver chunks."
+        )
+        return "would_rebuild"
+
+    insert_document_chunks(cursor, document_id, document_name, chunks)
+    print(f"Rebuilt {len(chunks)} Silver chunks for {document_name}")
+    return "rebuilt"
+
+
+def build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Build Silver chunks for explicitly selected manifest documents."
+    )
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument(
+        "--document-id",
+        action="append",
+        dest="document_ids",
+        help="Stable manifest document_id. Repeat to select more than one.",
+    )
+    selection.add_argument(
+        "--all",
+        action="store_true",
+        help="Process all enabled manifest documents.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Read Bronze and compare generated chunks without Silver writes.",
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=DEFAULT_MANIFEST_PATH,
+    )
+    return parser
+
+
 def main():
+    parser = build_argument_parser()
+    arguments = parser.parse_args()
+
+    try:
+        manifest = load_corpus_manifest(arguments.manifest)
+        selected = select_documents(
+            manifest,
+            arguments.document_ids,
+            arguments.all,
+        )
+        unsupported = [
+            f"{document.document_id} ({document.parser_type})"
+            for document in selected
+            if document.parser_type not in SUPPORTED_PARSER_TYPES
+        ]
+        if unsupported:
+            raise UnsupportedParserError(
+                "Unsupported parser(s): " + ", ".join(unsupported)
+            )
+    except (ManifestValidationError, UnsupportedParserError) as error:
+        parser.exit(status=2, message=f"Silver validation failed: {error}\n")
+
     encoding = tiktoken.get_encoding(TOKENIZER_NAME)
 
     connection = get_db_connection()
+    if arguments.dry_run:
+        connection.set_session(readonly=True, autocommit=False)
     cursor = connection.cursor()
 
     try:
-        documents = get_bronze_documents(cursor)
-
-        print(f"Found {len(documents)} document(s) in Bronze.")
-
-        for document_id, document_name, expected_page_count in documents:
+        statuses = []
+        for document in selected:
             print("-" * 80)
+            print(f"Processing selected document: {document.document_id}")
+            statuses.append(
+                process_document(
+                    cursor,
+                    document,
+                    encoding,
+                    dry_run=arguments.dry_run,
+                )
+            )
+
+        if arguments.dry_run:
+            connection.rollback()
+            print("Silver dry run complete. No chunks were changed.")
+        else:
+            connection.commit()
             print(
-                f"Creating section-aware chunks for: "
-                f"{document_name}"
+                f"Silver processing committed: rebuilt={statuses.count('rebuilt')}, "
+                f"unchanged={statuses.count('unchanged')}."
             )
-
-            pages = get_document_pages(
-                cursor=cursor,
-                document_id=document_id,
-            )
-
-            if len(pages) != expected_page_count:
-                raise ValueError(
-                    f"Page count mismatch for {document_name}: "
-                    f"expected {expected_page_count}, "
-                    f"found {len(pages)}"
-                )
-
-            annotated_lines = parse_document_structure(
-                document_name=document_name,
-                pages=pages,
-            )
-
-            if not annotated_lines:
-                raise ValueError(
-                    f"No structured text was produced for: "
-                    f"{document_name}"
-                )
-
-            validate_detected_structure(
-                document_name=document_name,
-                annotated_lines=annotated_lines,
-            )
-
-            print_structure_summary(
-                document_name=document_name,
-                annotated_lines=annotated_lines,
-            )
-
-            chunks = create_section_aware_chunks(
-                annotated_lines=annotated_lines,
-                encoding=encoding,
-                chunk_size=CHUNK_SIZE,
-                overlap=CHUNK_OVERLAP,
-            )
-
-            if not chunks:
-                raise ValueError(
-                    f"No chunks were created for: {document_name}"
-                )
-
-            insert_document_chunks(
-                cursor=cursor,
-                document_id=document_id,
-                document_name=document_name,
-                chunks=chunks,
-            )
-
-            print(
-                f"Prepared {len(chunks)} section-aware chunks "
-                f"for {document_name}"
-            )
-
-        connection.commit()
-
-        print("=" * 80)
-        print("Silver section-aware chunking completed.")
 
     except Exception:
         connection.rollback()

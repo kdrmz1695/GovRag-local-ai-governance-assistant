@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -14,6 +15,16 @@ from dotenv import load_dotenv
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from corpus_manifest import (
+    DEFAULT_MANIFEST_PATH,
+    ManifestValidationError,
+    load_corpus_manifest,
+)
+
 load_dotenv(PROJECT_ROOT / ".env")
 
 
@@ -31,7 +42,8 @@ MODEL_ALIAS = required_env("EMBEDDING_MODEL_ALIAS")
 MODEL_ID = required_env("EMBEDDING_MODEL_ID")
 MODEL_VERSION = required_env("EMBEDDING_MODEL_VERSION")
 EXPECTED_DIMENSION = int(required_env("EMBEDDING_DIMENSION"))
-DEFAULT_BATCH_SIZE = int(required_env("EMBEDDING_BATCH_SIZE"))
+_batch_size_value = os.getenv("EMBEDDING_BATCH_SIZE")
+DEFAULT_BATCH_SIZE = int(_batch_size_value) if _batch_size_value else None
 
 
 def get_db_connection():
@@ -48,23 +60,32 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def fetch_silver_chunks(cursor, limit: int | None):
+def fetch_silver_chunks(
+    cursor,
+    limit: int | None,
+    document_ids: list[str] | None = None,
+):
     query = """
         SELECT
             chunk_id,
             chunk_hash,
             chunk_text
         FROM silver.document_chunks
-        ORDER BY chunk_id
     """
 
-    parameters = ()
+    parameters: list = []
+
+    if document_ids:
+        query += " WHERE document_name = ANY(%s)"
+        parameters.append(document_ids)
+
+    query += " ORDER BY chunk_id"
 
     if limit is not None:
         query += " LIMIT %s"
-        parameters = (limit,)
+        parameters.append(limit)
 
-    cursor.execute(query, parameters)
+    cursor.execute(query, tuple(parameters))
     rows = cursor.fetchall()
 
     chunks = []
@@ -214,13 +235,11 @@ def save_embedding_batch(cursor, connection, batch, embeddings):
                 """
                 DELETE FROM gold.chunk_embeddings
                 WHERE chunk_id = %s
-                  AND model_id = %s
-                  AND model_version = %s;
+                  AND model_id = %s;
                 """,
                 (
                     chunk["chunk_id"],
                     MODEL_ID,
-                    MODEL_VERSION,
                 ),
             )
 
@@ -279,7 +298,26 @@ def main():
         "--batch-size",
         type=int,
         default=DEFAULT_BATCH_SIZE,
-        help="Number of chunks sent to Foundry in one request.",
+        help=(
+            "Number of chunks sent to Foundry in one request. Required when "
+            "EMBEDDING_BATCH_SIZE is not set."
+        ),
+    )
+
+    parser.add_argument(
+        "--document-id",
+        action="append",
+        dest="document_ids",
+        help=(
+            "Only embed chunks for this stable manifest document_id. "
+            "Repeat to select more than one. Omit to inspect all Silver chunks."
+        ),
+    )
+
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=DEFAULT_MANIFEST_PATH,
     )
 
     arguments = parser.parse_args()
@@ -287,8 +325,26 @@ def main():
     if arguments.limit is not None and arguments.limit <= 0:
         parser.error("--limit must be greater than zero.")
 
+    if arguments.batch_size is None:
+        parser.error(
+            "Set EMBEDDING_BATCH_SIZE or pass a positive --batch-size value."
+        )
+
     if arguments.batch_size <= 0:
         parser.error("--batch-size must be greater than zero.")
+
+    if arguments.document_ids:
+        try:
+            manifest = load_corpus_manifest(arguments.manifest)
+            known_ids = manifest.by_id()
+            unknown_ids = sorted(set(arguments.document_ids) - set(known_ids))
+            if unknown_ids:
+                raise ManifestValidationError(
+                    f"Unknown manifest document_id(s): {', '.join(unknown_ids)}"
+                )
+            arguments.document_ids = list(dict.fromkeys(arguments.document_ids))
+        except ManifestValidationError as error:
+            parser.exit(status=2, message=f"Gold validation failed: {error}\n")
 
     print(f"Foundry URL:        {FOUNDRY_BASE_URL}")
     print(f"Model alias:        {MODEL_ALIAS}")
@@ -296,6 +352,10 @@ def main():
     print(f"Model version:      {MODEL_VERSION}")
     print(f"Expected dimension: {EXPECTED_DIMENSION}")
     print(f"Batch size:         {arguments.batch_size}")
+    print(
+        "Document filter:    "
+        + (", ".join(arguments.document_ids) if arguments.document_ids else "all")
+    )
 
     connection = get_db_connection()
     cursor = connection.cursor()
@@ -304,6 +364,7 @@ def main():
         silver_chunks = fetch_silver_chunks(
             cursor=cursor,
             limit=arguments.limit,
+            document_ids=arguments.document_ids,
         )
 
         existing_embeddings = fetch_existing_embeddings(cursor)

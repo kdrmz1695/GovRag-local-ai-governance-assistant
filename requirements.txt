@@ -1,5 +1,12 @@
+# Core pipeline
 foundry-local-sdk==1.0.0
 pymupdf==1.28.0
 psycopg2-binary==2.9.12
 python-dotenv==1.2.2
 tiktoken==0.13.0
+
+# Retrieval, reranking, and UI
+numpy>=2.0,<3
+sentence-transformers>=5.0,<6
+streamlit==1.62.0
+torch>=2.7,<3
